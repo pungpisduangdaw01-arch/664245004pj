@@ -2,7 +2,7 @@
 
 คู่มือนี้พาสร้างระบบแนะนำผลไม้จากความชอบของผู้ใช้ โดยเก็บข้อมูลเป็นกราฟใน Neo4j Aura เขียนคำแนะนำด้วย Cypher และแสดงผลผ่าน Streamlit
 
-> ในหน้าจอและโจทย์นี้ใช้คำว่า “ผลไม้” แต่โค้ดและฐานข้อมูลปัจจุบันยังใช้ label `Water`, property `water_id` และฟังก์ชันบางส่วนที่มีคำว่า `water` ตามชื่อเดิมของโครงงาน หากเปลี่ยนชื่อเหล่านี้ ต้องแก้ทั้ง schema, query, Python และข้อมูลในฐานข้อมูลให้สอดคล้องกัน
+> โครงสร้างกราฟและข้อมูลตัวอย่างในคู่มือนี้ตรงกับ notebook `homework/03_neo4j/664245004_fruit_2.ipynb`: ใช้ label `User` และ `Fruit` โดยมี `name` เป็น key
 
 ## 1. สิ่งที่จะได้เรียนรู้
 
@@ -62,10 +62,10 @@ graph LR
 
 | องค์ประกอบ | ชื่อในโค้ด/ฐานข้อมูล | Property สำคัญ | ความหมาย |
 | --- | --- | --- | --- |
-| ผู้ใช้ | `Customer` | `customer_id`, `name` | ผู้ใช้ระบบ |
-| ผลไม้ | `Water` | `water_id`, `name`, `image` | ผลไม้ที่ระบบจัดเก็บและแนะนำ |
+| ผู้ใช้ | `User` | `name` | ผู้ใช้ระบบ |
+| ผลไม้ | `Fruit` | `name`, `image` | ผลไม้ที่ระบบจัดเก็บและแนะนำ |
 | ความชอบ | `LIKES` | - | ผู้ใช้ชอบผลไม้นั้น |
-| ความคล้ายกัน | `SIMILAR_TO` | - | ผู้ใช้สองคนมีความชอบคล้ายกัน |
+| ความคล้ายกัน | `SIMILAR_TO` | - | ผู้ใช้สองคนชอบผลไม้ชนิดเดียวกันอย่างน้อย 1 ชนิด |
 
 แม้ `SIMILAR_TO` ถูกเก็บเป็น Relationship ที่มีทิศทางใน Neo4j แต่ query ใช้ `-[:SIMILAR_TO]-` แบบไม่ระบุทิศทาง จึงถือว่าความคล้ายกันสมมาตร
 
@@ -74,22 +74,29 @@ graph LR
 เปิด Neo4j Browser หรือใช้เมนูตั้งค่าข้อมูลในแอปเพื่อสร้าง unique constraint:
 
 ```cypher
-CREATE CONSTRAINT customer_id_unique IF NOT EXISTS
-FOR (u:Customer) REQUIRE u.customer_id IS UNIQUE;
+CREATE CONSTRAINT user_name_unique IF NOT EXISTS
+FOR (u:User) REQUIRE u.name IS UNIQUE;
 
-CREATE CONSTRAINT water_id_unique IF NOT EXISTS
-FOR (w:Water) REQUIRE w.water_id IS UNIQUE;
+CREATE CONSTRAINT fruit_name_unique IF NOT EXISTS
+FOR (f:Fruit) REQUIRE f.name IS UNIQUE;
 ```
 
-Constraint ป้องกันไม่ให้มี node ผู้ใช้หรือผลไม้ที่ใช้รหัสซ้ำ ส่วนการ seed ใช้ `MERGE` เพื่อให้รันซ้ำได้โดยไม่สร้าง node ซ้ำ:
+Constraint ป้องกันไม่ให้มี node ผู้ใช้หรือผลไม้ที่ชื่อซ้ำ ส่วนการ seed ใช้ `MERGE` เพื่อให้รันซ้ำได้โดยไม่สร้าง node ซ้ำ:
 
 ```cypher
-UNWIND $rows AS row
-MERGE (u:Customer {customer_id: row.customer_id})
-SET u.name = row.name;
+UNWIND $names AS name
+MERGE (u:User {name: name});
 ```
 
-ฟังก์ชัน `seed_demo_data()` ใน `neo4j_service.py` สร้างผู้ใช้ 10 คน ผลไม้ตัวอย่าง 7 รายการ ความสัมพันธ์ `SIMILAR_TO` และ `LIKES` พร้อม constraint
+`SIMILAR_TO` สร้างจาก `LIKES` โดยเชื่อมผู้ใช้ทุกคู่ที่ชอบผลไม้ชนิดเดียวกัน เงื่อนไข `u1.name < u2.name` ทำให้ได้หนึ่งเส้นต่อคู่:
+
+```cypher
+MATCH (u1:User)-[:LIKES]->(:Fruit)<-[:LIKES]-(u2:User)
+WHERE u1.name < u2.name
+MERGE (u1)-[:SIMILAR_TO]->(u2);
+```
+
+ฟังก์ชัน `seed_demo_data()` ใน `neo4j_service.py` สร้าง constraint ผู้ใช้ 10 คน ผลไม้ 5 ชนิด `LIKES` 21 เส้น แล้วเรียก `rebuild_similar()` เพื่อสร้าง `SIMILAR_TO` (ได้ 32 คู่จากข้อมูลตัวอย่าง)
 
 ## 6. หลักการแนะนำผลไม้
 
@@ -108,18 +115,19 @@ SET u.name = row.name;
 ตัวอย่าง Cypher ที่สอดคล้องกับ `cypher/recommendation.cypher`:
 
 ```cypher
-MATCH (me:Customer {customer_id: $customer_id})
-      -[:SIMILAR_TO]-(similar:Customer)
-      -[:LIKES]->(fruit:Water)
+MATCH (me:User {name: $name})
+      -[:SIMILAR_TO]-(similar:User)
+      -[:LIKES]->(fruit:Fruit)
 WHERE NOT EXISTS { MATCH (me)-[:LIKES]->(fruit) }
 WITH DISTINCT fruit, similar
-RETURN fruit.water_id AS fruit_id,
-       fruit.name AS recommendation,
+RETURN fruit.name AS fruit,
        count(similar) AS score,
        collect(similar.name) AS similar_names
-ORDER BY score DESC, recommendation
+ORDER BY score DESC, fruit
 LIMIT $limit;
 ```
+
+ตัวอย่างจากข้อมูลตัวอย่าง: Ananda ชอบ Mango และ Apple ระบบจึงแนะนำ Banana (score 3), Durian (score 3) และ Grape (score 1) ตรงกับผลใน notebook
 
 `similar_names` ทำให้คำแนะนำอธิบายได้: หน้าจอสามารถบอกได้ว่าผลไม้รายการนั้นถูกแนะนำเพราะผู้ใช้ที่มีความชอบคล้ายกันคนใดเลือกไว้ สูตรคะแนนนี้เหมาะสำหรับเรียนรู้ graph traversal ไม่ใช่การประเมินคุณภาพคำแนะนำระดับงานวิจัย
 
@@ -128,11 +136,11 @@ LIMIT $limit;
 ชั้นบริการใน `neo4j_service.py` สร้าง Neo4j Driver และ cache ด้วย `@st.cache_resource` จากนั้นส่ง Cypher แบบ parameterized ผ่าน `execute_query()`:
 
 ```python
-cypher = "MATCH (u:Customer {customer_id: $customer_id}) RETURN u"
-parameters = {"customer_id": customer_id}
+cypher = "MATCH (u:User {name: $name}) RETURN u"
+parameters = {"name": name}
 ```
 
-หลีกเลี่ยงการนำ input มาต่อเป็น query string เพราะ parameter แยกข้อมูลออกจากคำสั่ง ทำให้ปลอดภัยและอ่านง่ายกว่า ฟังก์ชัน `recommend_waters()` ใน service เป็นจุดเรียก query คำแนะนำ แม้ชื่อฟังก์ชันยังใช้คำว่า `waters`
+หลีกเลี่ยงการนำ input มาต่อเป็น query string เพราะ parameter แยกข้อมูลออกจากคำสั่ง ทำให้ปลอดภัยและอ่านง่ายกว่า ฟังก์ชัน `recommend_fruits()` ใน service เป็นจุดเรียก query คำแนะนำ
 
 ## 8. ตั้งค่า Secrets และรันแอป
 
@@ -158,7 +166,7 @@ database = "YOUR_DATABASE"
 streamlit run app.py
 ```
 
-เมื่อเปิดแอปครั้งแรก เข้าเมนู **ตั้งค่าข้อมูล** แล้วกด **สร้าง Constraint + Demo Data** เพื่อเตรียมฐานข้อมูล
+เมื่อเปิดแอปครั้งแรก เข้าเมนู **ตั้งค่าข้อมูล** แล้วกด **สร้าง Constraint + ข้อมูลตัวอย่าง** เพื่อเตรียมฐานข้อมูล (ข้ามได้ถ้ารัน notebook งานที่ 3 กับ instance เดียวกันไว้แล้ว)
 
 ## 9. ทดลองใช้งานหน้าต่าง ๆ
 
@@ -166,32 +174,42 @@ streamlit run app.py
 | --- | --- |
 | ภาพรวม | ดูจำนวน node/relationship ความนิยมของผลไม้ และโปรไฟล์ผู้ใช้ |
 | แนะนำผลไม้ | เลือกผู้ใช้ กำหนดจำนวนผลลัพธ์ และดูคะแนนพร้อมเหตุผล |
-| ลูกค้า | เพิ่ม แก้ไข และลบข้อมูลผู้ใช้ |
+| ผู้ใช้ | เพิ่ม เปลี่ยนชื่อ และลบผู้ใช้ |
 | ผลไม้ | ดูรายการ เพิ่ม แก้ไข ลบ และจัดการรูปภาพ |
-| ความสัมพันธ์ | จัดการ `LIKES` และ `SIMILAR_TO` |
-| กราฟความสัมพันธ์ | สำรวจ node และ edge รอบผู้ใช้ที่เลือก |
-| ตั้งค่าข้อมูล | สร้าง constraint และ seed ข้อมูลตัวอย่าง |
+| ความสัมพันธ์ | เพิ่ม/ลบ `LIKES` และ `SIMILAR_TO` ของผู้ใช้ และคำนวณ `SIMILAR_TO` ใหม่จากผลไม้ที่ชอบร่วมกัน |
+| กราฟความสัมพันธ์ | สำรวจ node และ relationship รอบผู้ใช้ที่เลือก ในระยะ 1–3 ทอด |
+| ตั้งค่าข้อมูล | ดูการเชื่อมต่อ สร้าง constraint และข้อมูลตัวอย่าง หรือล้างข้อมูลแล้วเริ่มใหม่ |
 
-การลบ node ใช้ `DETACH DELETE` จึงลบ relationship ที่ติดอยู่กับ node นั้นด้วย รูปที่อัปโหลดจะถูกย่อก่อนจัดเก็บ ส่วนรูปเริ่มต้นของรายการอยู่ใน `images/`
+การลบ node ใช้ `DETACH DELETE` จึงลบ relationship ที่ติดอยู่กับ node นั้นด้วย รูปที่อัปโหลดจะถูกย่อก่อนจัดเก็บ ผลไม้ที่ไม่มีรูปจะแสดงรูปที่ระบบวาดให้
 
 ## 10. CRUD และการจัดการความสัมพันธ์
 
-ตัวอย่างคำสั่งแก้ไขชื่อผู้ใช้:
+ตัวอย่างคำสั่งเปลี่ยนชื่อผู้ใช้ เนื่องจาก `name` เป็น key จึงต้องตรวจว่าชื่อใหม่ยังไม่มีใครใช้ ความสัมพันธ์เดิมยังอยู่เพราะแก้ที่ node เดิม:
 
 ```cypher
-MATCH (u:Customer {customer_id: $customer_id})
-SET u.name = $name;
+MATCH (u:User {name: $name})
+WHERE NOT EXISTS { MATCH (x:User {name: $new_name}) WHERE x <> u }
+SET u.name = $new_name;
 ```
 
 เพิ่มความชอบโดยไม่สร้าง relationship ซ้ำ:
 
 ```cypher
-MATCH (u:Customer {customer_id: $customer_id})
-MATCH (fruit:Water {water_id: $water_id})
-MERGE (u)-[:LIKES]->(fruit);
+MATCH (u:User {name: $user})
+MATCH (f:Fruit {name: $fruit})
+MERGE (u)-[:LIKES]->(f);
 ```
 
-`neo4j_service.py` รวมการทำงาน CRUD และจัดการความสัมพันธ์ไว้เป็นฟังก์ชัน เช่น `create_customer()`, `create_water()`, `set_likes()` และ `set_similar()` เพื่อให้ UI ไม่ต้องประกอบ query เอง
+ลบผู้ใช้พร้อมความสัมพันธ์ทั้งหมด:
+
+```cypher
+MATCH (u:User {name: $name})
+DETACH DELETE u;
+```
+
+`neo4j_service.py` รวมการทำงาน CRUD และจัดการความสัมพันธ์ไว้เป็นฟังก์ชัน เช่น `create_user()`, `rename_user()`, `delete_user()`, `create_fruit()`, `set_likes()`, `set_similar()` และ `rebuild_similar()` เพื่อให้ UI ไม่ต้องประกอบ query เอง
+
+การแก้ `LIKES` ในแอปไม่เปลี่ยน `SIMILAR_TO` ให้อัตโนมัติ ถ้าต้องการให้ `SIMILAR_TO` ตรงกับความชอบล่าสุด ให้กดคำนวณใหม่ที่แท็บ `SIMILAR_TO` ซึ่งจะแทนที่ความสัมพันธ์ที่แก้ด้วยมือทั้งหมด
 
 ## 11. Deploy บน Streamlit Community Cloud
 
@@ -212,5 +230,3 @@ Streamlit Cloud ติดตั้ง package จาก `requirements.txt` แ�
 5. เพิ่ม aggregation ด้วย `count()` และหลักฐานด้วย `collect()`
 6. เปรียบเทียบผลเมื่อเปลี่ยนวิธีคำนวณความคล้ายหรือคะแนน
 7. ต่อด้วย rating, ราคา/คุณสมบัติผลไม้, Jaccard similarity, Graph Data Science หรือ Precision@K และ Recall@K
-
-ก่อนนำไปใช้จริง ควรเปลี่ยนชื่อภายในจาก `Water`/`water_id`/`recommend_waters` ให้สื่อถึงผลไม้ด้วยการปรับ schema, Cypher ทุกจุด, service, UI และข้อมูลเดิมในฐานข้อมูลอย่างเป็นชุด.

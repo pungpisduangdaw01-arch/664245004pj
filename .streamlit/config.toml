@@ -1,0 +1,4 @@
+# The app's CSS in app.py is designed for a light background, so pin the light theme.
+[theme]
+base = "light"
+primaryColor = "#e94f36"

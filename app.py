@@ -98,7 +98,7 @@ HOMEWORK = [
             "วาดกราฟด้วย matplotlib แยกสี Node สองประเภท",
             "ใช้ G.neighbors() ตอบคำถามว่าใครชอบผลไม้อะไร",
             "หาผู้ใช้ที่ชอบผลไม้เหมือนกันด้วยการเดินสองทอด",
-            "นับคะแนนคำแนะนำด้วย Counter และสร้างฟังก์ชัน recommend_waters()",
+            "นับคะแนนคำแนะนำด้วย Counter และสร้างฟังก์ชัน recommend_fruits()",
         ],
     },
     {
@@ -241,8 +241,8 @@ def require_connection() -> None:
     except Exception as exc:
         st.error("ยังเชื่อมต่อ Neo4j Aura ไม่สำเร็จ")
         st.code(
-            '[neo4j]\nuri = "neo4j+s://4e8333b1.databases.neo4j.io"\n'
-            'username = "4e8333b1"\npassword = "YOUR_PASSWORD"\ndatabase = "4e8333b1"',
+            '[neo4j]\nuri = "neo4j+s://96f9ec23.databases.neo4j.io"\n'
+            'username = "96f9ec23"\npassword = "YOUR_PASSWORD"\ndatabase = "96f9ec23"',
             language="toml",
         )
         st.caption("ให้นำค่าด้านบนไปใส่ใน .streamlit/secrets.toml (หรือ Streamlit Secrets) และห้าม commit password ลง GitHub")
