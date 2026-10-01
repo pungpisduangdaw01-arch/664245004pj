@@ -1,4 +1,18 @@
-# The app's CSS in app.py is designed for a light background, so pin the light theme.
+# ธีมตลาดผลไม้: พื้นครีม + ส้มแมนดาริน + ชมพูเบอร์รี + เขียวใบไม้ (รายละเอียดเพิ่มเติมอยู่ใน CSS ของ app.py)
 [theme]
 base = "light"
-primaryColor = "#e94f36"
+primaryColor = "#e8590c"
+backgroundColor = "#fff9ef"
+secondaryBackgroundColor = "#ffeed6"
+textColor = "#3b2a1a"
+borderColor = "#ffd8a8"
+baseRadius = "large"
+font = "Noto Sans Thai:https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap, sans-serif"
+headingFont = "Mitr:https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600&display=swap, sans-serif"
+
+[theme.sidebar]
+backgroundColor = "#fff0dc"
+secondaryBackgroundColor = "#ffe3bf"
+textColor = "#3b2a1a"
+primaryColor = "#e8590c"
+borderColor = "#ffc078"

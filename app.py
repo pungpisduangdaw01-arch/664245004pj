@@ -135,103 +135,160 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Base colours and fonts live in .streamlit/config.toml; this adds the fruit-themed details.
+# Base colours and fonts live in .streamlit/config.toml; this adds the fruit-market details.
 st.markdown(
     """
     <style>
-      /* Top padding clears Streamlit's fixed header so the hero banner is not clipped */
+      :root {
+        --cream: #fff9ef; --peel: #ffeed6; --rind: #ffd8a8; --ink: #3b2a1a; --soft-ink: #7a5c3e;
+        --mango: #ffc233; --tangerine: #e8590c; --berry: #d6336c; --grape: #7048e8; --leaf: #2f9e44;
+      }
+
+      /* Page: cream paper with faint seed dots; top padding clears Streamlit's fixed header */
+      .stApp {
+        background-color: var(--cream);
+        background-image: radial-gradient(rgba(255,192,120,.38) 1.3px, transparent 1.4px);
+        background-size: 24px 24px;
+      }
+      [data-testid="stHeader"] {background: rgba(255,249,239,.88);}
       .block-container {padding-top: 4rem; padding-bottom: 2rem;}
 
-      /* Hero banner: vibrant fruit gradient, decorative elements, and a smooth bottom edge */
+      /* Hero banner: banana-to-peach gradient, fruit-slice circles, and a row of fruit on the right */
       .hero {
         position: relative; overflow: hidden;
-        padding: 1.6rem 1.8rem 2.7rem; border-radius: 24px; margin-bottom: 1.1rem;
-        color: white;
+        padding: 1.7rem 15rem 1.8rem 2rem; border-radius: 28px; margin-bottom: 1.2rem;
+        color: var(--ink); border: 2px solid #ffc078;
         background:
-          radial-gradient(circle at 88% 28%, rgba(255,255,255,.22) 0 26px, transparent 27px),
-          radial-gradient(circle at 78% 62%, rgba(255,255,255,.16) 0 14px, transparent 15px),
-          radial-gradient(circle at 94% 70%, rgba(255,255,255,.14) 0 9px, transparent 10px),
-          radial-gradient(circle at 70% 24%, rgba(255,255,255,.12) 0 7px, transparent 8px),
-          linear-gradient(120deg, #10b981 0%, #059669 55%, #047857 100%);
-        box-shadow: 0 10px 28px rgba(16,185,129,.18);
+          radial-gradient(circle at 96% 8%, rgba(255,255,255,.55) 0 58px, transparent 59px),
+          radial-gradient(circle at 4% 118%, rgba(255,255,255,.40) 0 78px, transparent 79px),
+          linear-gradient(115deg, #ffe066 0%, #ffc078 52%, #ffa8a8 100%);
+        box-shadow: 0 8px 0 #ffd8a8;
       }
       .hero::after {
-        content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 44px;
-        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 60' preserveAspectRatio='none'%3E%3Cpath d='M0 34 C150 64 300 4 450 34 S750 64 900 34 S1100 4 1200 34 V60 H0Z' fill='%23ffffff' fill-opacity='.22'/%3E%3Cpath d='M0 44 C200 20 400 66 600 44 S1000 20 1200 44 V60 H0Z' fill='%23f0fdf4'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+        content: "🍊 🍇 🍌 🍓 🥭";
+        position: absolute; right: 1.6rem; top: 50%; transform: translateY(-50%) rotate(-4deg);
+        font-size: 2.1rem; letter-spacing: .15rem; white-space: nowrap;
+        filter: drop-shadow(0 3px 0 rgba(59,42,26,.12));
       }
-      .hero h1 {margin: 0; padding: 0; font-size: 2.1rem; color: white;}
-      .hero p {opacity: .92; margin: .35rem 0 0 0;}
-      .hero .hero-sub {opacity: .75; font-size: .85rem; letter-spacing: .04em;}
+      .hero h1 {margin: .2rem 0 0; padding: 0; font-size: 2.1rem; color: var(--ink);}
+      .hero p {margin: .4rem 0 0; color: #5c4127;}
+      .hero .hero-sub {
+        display: inline-block; padding: .15rem .7rem; border-radius: 999px;
+        background: rgba(255,255,255,.65); color: #c2410c;
+        font-size: .75rem; font-weight: 700; letter-spacing: .08em;
+      }
 
-      /* Sidebar: fresh green gradient with pill-shaped menu items */
-      [data-testid="stSidebar"] {background: linear-gradient(180deg, #064e3b 0%, #065f46 100%);}
-      .brand {display: flex; align-items: center; gap: .6rem; margin: .2rem 0 .1rem;}
+      /* Sidebar: light peach with rounded menu items */
+      [data-testid="stSidebar"] {border-right: 2px dashed #ffc078;}
+      .brand {display: flex; align-items: center; gap: .65rem; margin: .2rem 0 .1rem;}
       .brand .drop {
-        width: 42px; height: 42px; border-radius: 14px; font-size: 1.4rem;
+        width: 46px; height: 46px; flex: 0 0 46px; border-radius: 50%; font-size: 1.45rem;
         display: flex; align-items: center; justify-content: center;
-        background: rgba(52,211,153,.20); border: 1px solid rgba(52,211,153,.45);
+        background: linear-gradient(135deg, #ffe066, #ffa94d); border: 2px solid #fff;
+        box-shadow: 0 3px 0 #ffc078;
       }
-      .brand b {font-size: 1.15rem; line-height: 1.2; color: #ffffff;}
-      .brand span {font-size: .78rem; opacity: .75;}
+      .brand b {font-size: 1.12rem; line-height: 1.2; color: var(--ink);}
+      .brand span {font-size: .78rem; color: var(--soft-ink);}
       .author {
-        padding: .7rem .85rem; border-radius: 14px; font-size: .9rem; line-height: 1.5;
-        background: rgba(255,255,255,.07); border: 1px solid rgba(52,211,153,.30);
+        padding: .75rem .9rem; border-radius: 18px; font-size: .9rem; line-height: 1.5;
+        background: #fff; border: 2px solid var(--rind); color: var(--ink);
       }
-      .author small {display: block; opacity: .7; font-size: .75rem; letter-spacing: .03em;}
-      .author b {color: #ffffff;}
-      [data-testid="stSidebar"] [role="radiogroup"] {gap: .2rem;}
+      .author small {display: block; color: var(--soft-ink); font-size: .75rem; letter-spacing: .03em;}
+      .author b {color: #c2410c;}
+      [data-testid="stSidebar"] [role="radiogroup"] {gap: .25rem;}
       [data-testid="stSidebar"] [role="radiogroup"] label {
-        width: 100%; padding: .5rem .7rem; border-radius: 12px; transition: background .15s;
+        width: 100%; padding: .5rem .8rem; border-radius: 999px;
+        border: 2px solid transparent; transition: background .15s, border-color .15s;
       }
-      [data-testid="stSidebar"] [role="radiogroup"] label:hover {background: rgba(255,255,255,.08);}
+      [data-testid="stSidebar"] [role="radiogroup"] label:hover {background: rgba(255,255,255,.7);}
       [data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
-        background: rgba(52,211,153,.20); box-shadow: inset 3px 0 0 #34d399;
+        background: #fff; border-color: #ffa94d; box-shadow: 0 3px 0 #ffd8a8; font-weight: 600;
+      }
+
+      /* Buttons: juicy pills that press down on hover */
+      [data-testid="stButton"] button, [data-testid="stLinkButton"] a,
+      [data-testid="stDownloadButton"] button, [data-testid="stFormSubmitButton"] button {
+        border-radius: 999px; font-weight: 600; transition: transform .12s, box-shadow .12s;
+      }
+      [data-testid="stButton"] button:not(:disabled):hover, [data-testid="stLinkButton"] a:hover,
+      [data-testid="stDownloadButton"] button:hover, [data-testid="stFormSubmitButton"] button:hover {
+        transform: translateY(1px);
+      }
+      [data-testid="stButton"] button[kind="primary"]:not(:disabled),
+      [data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"]:not(:disabled),
+      button[data-testid="stBaseButton-primary"]:not(:disabled),
+      button[data-testid="stBaseButton-primaryFormSubmit"]:not(:disabled) {
+        background: linear-gradient(90deg, #f76707, #e8590c); border-color: #d9480f;
+        box-shadow: 0 3px 0 #c2410c; color: #fff;
       }
 
       /* Cards */
       [data-testid="stMetric"] {
-        background: #ffffff; border: 1px solid #a7f3d0; border-top: 4px solid #10b981;
-        border-radius: 18px; padding: 1rem 1.2rem; box-shadow: 0 4px 14px rgba(5,150,105,.08);
+        background: #fff; border: 2px solid var(--rind); border-left: 8px solid var(--mango);
+        border-radius: 20px; padding: 1rem 1.2rem; box-shadow: 0 5px 0 var(--peel);
       }
-      [data-testid="stMetricValue"] {color: #059669; font-weight: 700;}
+      [data-testid="stMetricValue"] {color: var(--tangerine); font-weight: 700;}
       [class*="st-key-card_"], [data-testid="stForm"] {
-        background: #ffffff; box-shadow: 0 4px 14px rgba(5,150,105,.07);
+        background: #fff; border-color: var(--rind) !important; border-radius: 22px;
+        box-shadow: 0 5px 0 var(--peel);
       }
-      [data-testid="stImage"] img {border-radius: 14px; box-shadow: 0 4px 12px rgba(6,78,59,.12);}
+      [data-testid="stImage"] img {border-radius: 18px; border: 2px solid var(--peel);}
 
       .score-pill {
-        display: inline-block; padding: .2rem .65rem; border-radius: 999px;
-        background: linear-gradient(90deg, #059669, #10b981);
-        color: white; font-size: .8rem; font-weight: 700;
+        display: inline-block; padding: .2rem .7rem; border-radius: 999px;
+        background: linear-gradient(90deg, #e8590c, #d6336c);
+        color: #fff; font-size: .8rem; font-weight: 700;
       }
-      .muted {opacity: .72; font-size: .9rem;}
+      .muted {color: var(--soft-ink); font-size: .9rem;}
 
-      /* Hub landing page */
-      .hero.hub {text-align: center; padding: 2.2rem 1.8rem 3.4rem;}
+      /* Hub landing page: each card takes the colour of one fruit */
+      .hero.hub {text-align: center; padding: 2.2rem 1.8rem 2rem;}
+      .hero.hub::after {position: static; display: block; transform: none; margin-top: 1rem; font-size: 2rem;}
       .hero.hub h1 {font-size: 2.5rem; margin-top: .7rem;}
       .hub-badge {
         display: inline-block; padding: .3rem 1rem; border-radius: 999px;
-        font-size: .75rem; letter-spacing: .14em;
-        background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.40);
+        font-size: .75rem; font-weight: 700; letter-spacing: .12em;
+        background: rgba(255,255,255,.7); color: #c2410c;
       }
       .hub-head {display: flex; align-items: center; justify-content: space-between;}
       .hub-icon {
-        width: 46px; height: 46px; border-radius: 14px; font-size: 1.35rem;
+        width: 48px; height: 48px; border-radius: 50%; font-size: 1.35rem;
         display: flex; align-items: center; justify-content: center;
-        background: #d1fae5; border: 1px solid #a7f3d0;
+        background: var(--fruit-soft, var(--peel)); border: 2px solid var(--fruit, var(--mango));
       }
-      .hub-tag {font-size: .75rem; letter-spacing: .1em; color: #047857;}
+      .hub-tag {font-size: .75rem; font-weight: 700; letter-spacing: .1em; color: var(--fruit-dark, #c2410c);}
       .hub-name {margin: .9rem 0 .2rem !important; padding: 0 !important; font-size: 1.2rem !important; min-height: 3.3rem;}
-      .hub-desc {margin: 0; min-height: 6.6rem; color: #065f46;}
-      [class*="st-key-card_hub_"] {min-height: 23.5rem;}
-      .hub-footer {text-align: center; color: #047857; font-size: .88rem; line-height: 1.8;}
-      .hub-footer small {opacity: .8;}
+      .hub-desc {margin: 0; min-height: 6.6rem; color: var(--soft-ink);}
+      [class*="st-key-card_hub_"] {
+        min-height: 23.5rem; border-top: 8px solid var(--fruit, var(--mango)) !important;
+        transition: transform .15s, box-shadow .15s;
+      }
+      [class*="st-key-card_hub_"]:hover {transform: translateY(-4px); box-shadow: 0 9px 0 var(--peel);}
+      .st-key-card_hub_01_club {--fruit: #ffc233; --fruit-soft: #fff3bf; --fruit-dark: #b25e00;}
+      .st-key-card_hub_02_graph {--fruit: #9775fa; --fruit-soft: #e5dbff; --fruit-dark: #5f3dc4;}
+      .st-key-card_hub_03_neo4j {--fruit: #f06595; --fruit-soft: #ffdeeb; --fruit-dark: #a61e4d;}
+      .st-key-card_hub_app {--fruit: #51cf66; --fruit-soft: #d3f9d8; --fruit-dark: #2b8a3e;}
+      .hub-footer {text-align: center; color: var(--soft-ink); font-size: .88rem; line-height: 1.8;}
+      .hub-footer small {color: #c2410c;}
       .hero.work h1 {font-size: 1.9rem; margin-top: .6rem;}
       .work-section {margin: 0 0 .5rem; padding: 0; font-size: 1.1rem;}
       .nb-label {
-        margin: .9rem 0 .25rem; font-size: .72rem; letter-spacing: .08em; color: #047857;
+        margin: .9rem 0 .25rem; font-size: .72rem; font-weight: 700; letter-spacing: .08em; color: #c2410c;
       }
-      .st-key-card_hub_app {border-color: #10b981; box-shadow: 0 6px 20px rgba(16,185,129,.16);}
+
+      @media (max-width: 900px) {
+        .hero {padding: 1.3rem 1.2rem 1.4rem;}
+        .hero::after {display: none;}
+        .hero.hub::after {display: block; font-size: 1.6rem;}
+        .hero h1 {font-size: 1.7rem;}
+        .hero.hub h1 {font-size: 1.9rem;}
+        [class*="st-key-card_hub_"] {min-height: 0;}
+        .hub-name, .hub-desc {min-height: 0;}
+        .hub-desc {margin-bottom: 1rem;}
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {transition-duration: .01ms !important;}
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -642,7 +699,7 @@ with st.sidebar:
     st.markdown(
         """
         <div class="brand">
-          <div class="drop">🍎</div>
+          <div class="drop">🍊</div>
           <div><b>ระบบแนะนำผลไม้</b><br><span>Neo4j Aura + Streamlit</span></div>
         </div>
         """,
@@ -666,7 +723,7 @@ st.markdown(
     """
     <div class="hero">
       <div class="hero-sub">FRUIT RECOMMENDATION SYSTEM</div>
-      <h1>🍎 ระบบแนะนำผลไม้</h1>
+      <h1>ระบบแนะนำผลไม้</h1>
       <p>แนะนำผลไม้ด้วย Graph Database จากผู้ใช้ที่ชอบผลไม้คล้ายกัน</p>
     </div>
     """,
@@ -864,18 +921,18 @@ elif page == "Graph Explorer":
     if not rows:
         st.info("ไม่พบความสัมพันธ์ของผู้ใช้นี้ตามเงื่อนไขที่เลือก")
     else:
-        fill = {"User": "#fdf3c7", "Fruit": "#fde3dc"}
+        fill = {"User": "#fff3bf", "Fruit": "#ffdeeb"}
         dot = [
             "digraph G {",
             'rankdir="LR";',
-            'node [shape=box, style="filled", fillcolor="#ffffff", color="#18211f", fontname="sans-serif"];',
+            'node [shape=box, style="rounded,filled", fillcolor="#ffffff", color="#ffa94d", fontname="sans-serif"];',
             'edge [color="#65716c", fontcolor="#65716c", fontname="sans-serif", fontsize=10];',
         ]
         seen_nodes = set()
         for r in rows:
             for label, name in [(r["source_label"], r["source"]), (r["target_label"], r["target"])]:
                 if (label, name) not in seen_nodes:
-                    border = ', penwidth=3, color="#e94f36"' if (label, name) == ("User", user) else ""
+                    border = ', penwidth=3, color="#e8590c"' if (label, name) == ("User", user) else ""
                     dot.append(
                         f'{dot_quote(f"{label}:{name}")} [label={dot_quote(name)}, fillcolor="{fill.get(label, "#ffffff")}"{border}];'
                     )
@@ -886,7 +943,7 @@ elif page == "Graph Explorer":
             direction = ", dir=none" if r["relationship"] == "SIMILAR_TO" else ""
             dot.append(f'{source} -> {target} [label="{r["relationship"]}"{direction}];')
         dot.append("}")
-        st.caption(f"พบ {len(seen_nodes)} node และ {len(rows)} relationship · สีเหลือง = ผู้ใช้ · สีแดงอ่อน = ผลไม้ · กรอบหนา = ผู้ใช้ที่เลือก")
+        st.caption(f"พบ {len(seen_nodes)} node และ {len(rows)} relationship · สีเหลือง = ผู้ใช้ · สีชมพู = ผลไม้ · กรอบหนา = ผู้ใช้ที่เลือก")
         st.graphviz_chart("\n".join(dot), width="stretch")
         with st.expander("ดูข้อมูล relationship ที่ใช้วาดกราฟ"):
             st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
