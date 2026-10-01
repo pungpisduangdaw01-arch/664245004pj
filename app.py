@@ -59,7 +59,7 @@ PAGES = {
 }
 
 # Hub (landing page): homework 1-3 live in homework/<folder>/, card 4 opens this app.
-REPO_URL = "https://github.com/pungpisduangdaw01-arch/664245004pj.git"
+REPO_URL = "https://github.com/pungpisduangdaw01-arch/664245004pj"
 REPO_BRANCH = "main"
 HOMEWORK_DIR = Path(__file__).parent / "homework"
 HOMEWORK = [
