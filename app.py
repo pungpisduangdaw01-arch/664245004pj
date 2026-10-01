@@ -601,7 +601,7 @@ def render_hub() -> None:
     st.markdown(
         """
         <div class="hub-footer">
-          กมลวรรณ ทับจิต · รหัสนักศึกษา 664245002<br>
+          ชิษณุพงศ์ เกตุพูนทอง · รหัสนักศึกษา 664245004<br>
           <small>Fruit Recommendation Project</small>
         </div>
         """,
