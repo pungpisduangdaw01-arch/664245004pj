@@ -18,38 +18,41 @@ import streamlit as st
 from PIL import Image, ImageOps
 
 from neo4j_service import (
-    create_customer,
-    create_water,
-    delete_customer,
-    delete_water,
-    get_customers,
+    RELATIONSHIP_TYPES,
+    connection_info,
+    create_fruit,
+    create_user,
+    delete_fruit,
+    delete_user,
     get_dashboard_metrics,
+    get_fruit_images,
+    get_fruits,
     get_profile,
-    get_water_images,
-    get_waters,
+    get_users,
     graph_neighborhood,
     list_likes,
     list_similarities,
     ping,
-    recommend_waters,
+    rebuild_similar,
+    recommend_fruits,
+    rename_fruit,
+    rename_user,
     seed_demo_data,
+    set_fruit_image,
     set_likes,
     set_similar,
-    set_water_image,
-    update_customer,
-    update_water,
 )
 
 IMAGE_TYPES = ["png", "jpg", "jpeg", "webp"]
 IMAGE_MAX_SIDE = 480  # stored pictures are shrunk to this so a node property stays small
-BRAND_IMAGE_DIR = Path(__file__).parent / "images"  # bundled brand photos, see images/CREDITS.md
+FRUIT_IMAGE_DIR = Path(__file__).parent / "images"  # optional bundled photos, matched by name: Mango -> images/mango.jpg
 
 # Sidebar menu: internal page key -> Thai label.
 PAGES = {
     "Dashboard": "📊 ภาพรวม",
     "Recommendations": "✨ แนะนำผลไม้",
-    "Customers": "👤 ลูกค้า",
-    "Waters": "🍎 ผลไม้",
+    "Users": "👤 ผู้ใช้",
+    "Fruits": "🍎 ผลไม้",
     "Relationships": "🔗 ความสัมพันธ์",
     "Graph Explorer": "🕸️ กราฟความสัมพันธ์",
     "Admin / Setup": "⚙️ ตั้งค่าข้อมูล",
@@ -106,20 +109,21 @@ HOMEWORK = [
         "tag": "03 / NEO4J",
         "icon": "🗃️",
         "title": "ผลไม้ด้วย Neo4j",
-        "text": "เชื่อม Neo4j Aura จาก Python แล้วแนะนำผลไม้ด้วย Cypher จากลูกค้าที่มีรสนิยมคล้ายกัน",
+        "text": "เชื่อม Neo4j Aura จาก Python แล้วแนะนำผลไม้ด้วย Cypher จากผู้ใช้ที่ชอบผลไม้คล้ายกัน",
         "name": "งานที่ 3 — ระบบแนะนำผลไม้ด้วย Neo4j Aura",
         "about": (
             "Notebook ที่ย้ายโจทย์ผลไม้จากกราฟในหน่วยความจำไปเก็บใน Neo4j Aura ผ่าน Neo4j Python Driver "
-            "สร้าง Customer, Water และความสัมพันธ์ SIMILAR_TO กับ LIKES แล้วเขียน Cypher แนะนำผลไม้ "
-            "ที่ลูกค้าที่คล้ายกันชอบแต่เจ้าตัวยังไม่ได้ชอบ เป็นต้นแบบของระบบในการ์ดที่ 4"
+            "สร้าง User, Fruit และความสัมพันธ์ LIKES แล้วสร้าง SIMILAR_TO ระหว่างผู้ใช้ที่ชอบผลไม้ชนิดเดียวกัน "
+            "จากนั้นเขียน Cypher แนะนำผลไม้ที่ผู้ใช้ที่คล้ายกันชอบแต่เจ้าตัวยังไม่ได้ชอบ เป็นต้นแบบของระบบในการ์ดที่ 4"
         ),
         "topics": [
             "เชื่อมต่อ Neo4j Aura และหา home database",
-            "สร้าง Unique Constraint ของ customer_id และ water_id",
+            "สร้าง Unique Constraint ของ User.name และ Fruit.name",
             "เพิ่มข้อมูลหลายรายการด้วย UNWIND + MERGE",
-            "Traversal หลายทอด: Customer → SIMILAR_TO → Customer → LIKES → Water",
-            "Aggregation ด้วย count() และแสดงผลเป็นตาราง pandas",
-            "ฟังก์ชัน recommend_waters(), find_customer() และ liked_waters()",
+            "สร้าง SIMILAR_TO จากผู้ใช้ที่ชอบผลไม้ชนิดเดียวกัน",
+            "Traversal หลายทอด: User → SIMILAR_TO → User → LIKES → Fruit",
+            "นับคะแนนด้วย count(DISTINCT similar) และตัดผลไม้ที่ชอบอยู่แล้วด้วย WHERE NOT",
+            "ฟังก์ชัน recommend_fruits()",
         ],
     },
 ]
@@ -247,11 +251,22 @@ def require_connection() -> None:
         )
         st.caption("ให้นำค่าด้านบนไปใส่ใน .streamlit/secrets.toml (หรือ Streamlit Secrets) และห้าม commit password ลง GitHub")
         st.exception(exc)
+        if st.button("ลองเชื่อมต่ออีกครั้ง"):
+            st.rerun()
+        if st.button("← กลับหน้าหลัก"):
+            st.session_state["view"] = "hub"
+            st.rerun()
         st.stop()
 
 
 def flash(message: str) -> None:
     st.session_state["flash"] = message
+    # Every successful write bumps the revision; widgets keyed with it are rebuilt from the database.
+    st.session_state["rev"] = revision() + 1
+
+
+def revision() -> int:
+    return st.session_state.get("rev", 0)
 
 
 def show_flash() -> None:
@@ -260,19 +275,19 @@ def show_flash() -> None:
         st.success(message)
 
 
-def customer_selector(key: str = "customer") -> str:
-    customers = get_customers()
-    if not customers:
-        st.info('ยังไม่มีข้อมูลลูกค้า กรุณาไปที่เมนู "ตั้งค่าข้อมูล" แล้วสร้างข้อมูลตัวอย่าง หรือเพิ่มลูกค้าที่เมนู "ลูกค้า"')
+def user_selector(key: str = "user") -> str:
+    users = [u["name"] for u in get_users()]
+    if not users:
+        st.info('ยังไม่มีข้อมูลผู้ใช้ กรุณาไปที่เมนู "ตั้งค่าข้อมูล" แล้วสร้างข้อมูลตัวอย่าง หรือเพิ่มผู้ใช้ที่เมนู "ผู้ใช้"')
         st.stop()
-    labels = {f"{x['customer_id']} — {x['name']}": x["customer_id"] for x in customers}
-    chosen = st.selectbox("เลือกผู้ใช้", list(labels), key=key)
-    return labels[chosen]
+    return st.selectbox("เลือกผู้ใช้", users, key=key)
 
 
-def next_id(existing: list[str], prefix: str, start: int) -> str:
-    numbers = [int(x[len(prefix):]) for x in existing if x.startswith(prefix) and x[len(prefix):].isdigit()]
-    return f"{prefix}{(max(numbers) + 1 if numbers else start):03d}"
+def change_summary(current: list[str], chosen: list[str]) -> tuple[list[str], list[str]]:
+    added, removed = sorted(set(chosen) - set(current)), sorted(set(current) - set(chosen))
+    if added or removed:
+        st.write(f"จะเพิ่ม {len(added)} เส้น: {', '.join(added) or '-'} · จะลบ {len(removed)} เส้น: {', '.join(removed) or '-'}")
+    return added, removed
 
 
 def prepare_image(uploaded: Any) -> bytes | None:
@@ -288,8 +303,8 @@ def prepare_image(uploaded: Any) -> bytes | None:
     return buffer.getvalue()
 
 
-def placeholder_svg(water_id: str, name: str) -> str:
-    hue = zlib.crc32(water_id.encode()) % 360
+def placeholder_svg(name: str) -> str:
+    hue = zlib.crc32(name.encode()) % 360
     text = name if len(name) <= 18 else name[:17] + "…"
     font_size = min(11.0, 116 / max(len(text), 1))
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -40 240 320" width="240" height="320">
@@ -302,69 +317,67 @@ def placeholder_svg(water_id: str, name: str) -> str:
 
 
 @lru_cache(maxsize=None)
-def brand_picture(name: str) -> bytes | None:
+def bundled_picture(name: str) -> bytes | None:
     ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
     slug = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
-    path = BRAND_IMAGE_DIR / f"{slug}.jpg"
+    path = FRUIT_IMAGE_DIR / f"{slug}.jpg"
     return path.read_bytes() if slug and path.is_file() else None
 
 
-def water_picture(water_id: str, name: str, images: dict[str, bytes]) -> bytes | str:
-    return images.get(water_id) or brand_picture(name) or placeholder_svg(water_id, name)
+def fruit_picture(name: str, images: dict[str, bytes]) -> bytes | str:
+    return images.get(name) or bundled_picture(name) or placeholder_svg(name)
 
 
-def water_picture_uri(water_id: str, name: str, images: dict[str, bytes]) -> str:
-    data = images.get(water_id) or brand_picture(name)
+def fruit_picture_uri(name: str, images: dict[str, bytes]) -> str:
+    data = images.get(name) or bundled_picture(name)
     if data:
         return "data:image/jpeg;base64," + base64.b64encode(data).decode()
-    return "data:image/svg+xml;base64," + base64.b64encode(placeholder_svg(water_id, name).encode()).decode()
+    return "data:image/svg+xml;base64," + base64.b64encode(placeholder_svg(name).encode()).decode()
+
+
+def dot_quote(text: str) -> str:
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def manage_nodes(
     *,
+    kind: str,
     noun: str,
-    id_field: str,
     rows: list[dict[str, Any]],
     column_labels: dict[str, str],
-    id_prefix: str,
-    id_start: int,
-    create: Callable[[str, str], bool],
-    update: Callable[[str, str], bool],
+    create: Callable[[str], bool],
+    rename: Callable[[str, str], bool],
     delete: Callable[[str], bool],
     delete_warning: Callable[[dict[str, Any]], str],
     images: dict[str, bytes] | None = None,
     set_image: Callable[[str, bytes | None], bool] | None = None,
 ) -> None:
+    """Add / edit / delete tabs for nodes whose unique key is `name` (User and Fruit)."""
     st.write(f"ทั้งหมด {len(rows)} รายการ")
     if rows:
         st.dataframe(pd.DataFrame(rows).rename(columns=column_labels), width="stretch", hide_index=True)
 
-    by_id = {row[id_field]: row for row in rows}
-    add_tab, edit_tab, delete_tab = st.tabs(["➕ เพิ่ม", "✏️ แก้ไข", "🗑️️ ลบ"])
-
-    saves_key = f"saves_{id_field}"
-    saves = st.session_state.get(saves_key, 0)
+    by_name = {row["name"]: row for row in rows}
+    add_tab, edit_tab, delete_tab = st.tabs(["➕ เพิ่ม", "✏️ แก้ไข", "🗑️ ลบ"])
 
     with add_tab:
-        with st.form(f"add_{id_field}_{saves}"):
-            new_id = st.text_input(f"รหัส{noun} ({id_field})", value=next_id(list(by_id), id_prefix, id_start))
+        with st.form(f"add_{kind}_{revision()}"):
             new_name = st.text_input(f"ชื่อ{noun}")
             upload = st.file_uploader(f"รูป{noun} (ไม่บังคับ)", type=IMAGE_TYPES) if set_image else None
             submitted = st.form_submit_button("เพิ่ม", type="primary")
         if submitted:
-            new_id, new_name = new_id.strip(), new_name.strip()
+            new_name = new_name.strip()
             new_image = prepare_image(upload) if upload else None
-            if not new_id or not new_name:
-                st.error("กรุณากรอกทั้งรหัสและชื่อ")
+            if not new_name:
+                st.error(f"กรุณากรอกชื่อ{noun}")
             elif upload and new_image is None:
                 st.error("ไฟล์ที่อัปโหลดไม่ใช่รูปภาพที่อ่านได้ กรุณาเลือกไฟล์อื่น")
-            elif not create(new_id, new_name):
-                st.error(f"รหัส {new_id} ถูกใช้แล้ว กรุณาใช้รหัสอื่น")
+            elif not create(new_name):
+                st.error(f"มี{noun}ชื่อ {new_name} อยู่แล้ว กรุณาใช้ชื่ออื่น")
             else:
                 if new_image:
-                    set_image(new_id, new_image)
-                st.session_state[saves_key] = saves + 1
-                flash(f"เพิ่ม{noun} {new_id} — {new_name} แล้ว" + (" พร้อมรูป" if new_image else ""))
+                    set_image(new_name, new_image)
+                flash(f"เพิ่ม{noun} {new_name} แล้ว" + (" พร้อมรูป" if new_image else ""))
                 st.rerun()
 
     if not rows:
@@ -372,19 +385,16 @@ def manage_nodes(
         delete_tab.info(f"ยังไม่มี{noun}ให้ลบ")
         return
 
-    def label(item_id: str) -> str:
-        return f"{item_id} — {by_id[item_id]['name']}"
-
     with edit_tab:
-        edit_id = st.selectbox(f"เลือก{noun}ที่จะแก้ไข", list(by_id), format_func=label, key=f"edit_{id_field}")
-        has_image = bool(set_image) and edit_id in (images or {})
+        edit_name = st.selectbox(f"เลือก{noun}ที่จะแก้ไข", list(by_name), key=f"edit_{kind}")
+        has_image = bool(set_image) and edit_name in (images or {})
         if set_image:
-            st.image(water_picture(edit_id, by_id[edit_id]["name"], images or {}), width=160)
+            st.image(fruit_picture(edit_name, images or {}), width=160)
             st.caption("รูปปัจจุบัน" if has_image else "ยังไม่มีรูปที่อัปโหลด (แสดงรูปเริ่มต้น)")
         upload, remove_image = None, False
-        with st.form(f"edit_form_{id_field}_{edit_id}_{saves}"):
-            st.text_input(f"รหัส{noun} ({id_field})", value=edit_id, disabled=True)
-            edited_name = st.text_input(f"ชื่อ{noun}", value=by_id[edit_id]["name"])
+        with st.form(f"edit_{kind}_{edit_name}_{revision()}"):
+            edited_name = st.text_input(f"ชื่อ{noun}", value=edit_name)
+            st.caption("การเปลี่ยนชื่อไม่กระทบความสัมพันธ์ LIKES / SIMILAR_TO ที่มีอยู่")
             if set_image:
                 upload = st.file_uploader(f"เปลี่ยนรูป{noun} (ไม่บังคับ)", type=IMAGE_TYPES)
                 if has_image:
@@ -392,30 +402,35 @@ def manage_nodes(
             submitted = st.form_submit_button("บันทึกการแก้ไข", type="primary")
         if submitted:
             edited_name = edited_name.strip()
+            renamed = edited_name != edit_name
             new_image = prepare_image(upload) if upload else None
             if not edited_name:
                 st.error("ชื่อห้ามว่าง")
             elif upload and new_image is None:
                 st.error("ไฟล์ที่อัปโหลดไม่ใช่รูปภาพที่อ่านได้ กรุณาเลือกไฟล์อื่น")
-            elif not update(edit_id, edited_name):
-                st.error(f"ไม่พบ{noun} {edit_id} (อาจถูกลบไปแล้ว)")
+            elif not (renamed or new_image or remove_image):
+                st.info("ยังไม่มีการเปลี่ยนแปลง")
+            elif renamed and edited_name in by_name:
+                st.error(f"มี{noun}ชื่อ {edited_name} อยู่แล้ว กรุณาใช้ชื่ออื่น")
+            elif renamed and not rename(edit_name, edited_name):
+                st.error(f"แก้ไขไม่สำเร็จ: ไม่พบ{noun} {edit_name} หรือชื่อ {edited_name} ถูกใช้แล้ว")
             else:
                 if new_image:
-                    set_image(edit_id, new_image)
+                    set_image(edited_name, new_image)
                 elif remove_image:
-                    set_image(edit_id, None)
-                st.session_state[saves_key] = saves + 1
+                    set_image(edited_name, None)
+                name_note = f"เปลี่ยนชื่อ{noun} {edit_name} เป็น {edited_name}" if renamed else f"แก้ไข{noun} {edit_name}"
                 image_note = " และเปลี่ยนรูป" if new_image else " และลบรูป" if remove_image else ""
-                flash(f"แก้ไข{noun} {edit_id} เป็น {edited_name}{image_note} แล้ว")
+                flash(f"{name_note}{image_note} แล้ว")
                 st.rerun()
 
     with delete_tab:
-        delete_id = st.selectbox(f"เลือก{noun}ที่จะลบ", list(by_id), format_func=label, key=f"delete_{id_field}")
-        st.warning(delete_warning(by_id[delete_id]))
-        confirmed = st.checkbox(f"ยืนยันการลบ {label(delete_id)}", key=f"confirm_{id_field}_{delete_id}")
-        if st.button("ลบ", type="primary", disabled=not confirmed, key=f"delete_button_{id_field}"):
-            if delete(delete_id):
-                flash(f"ลบ{noun} {label(delete_id)} แล้ว")
+        delete_name = st.selectbox(f"เลือก{noun}ที่จะลบ", list(by_name), key=f"delete_{kind}")
+        st.warning(delete_warning(by_name[delete_name]))
+        confirmed = st.checkbox(f"ยืนยันการลบ {delete_name}", key=f"confirm_{kind}_{delete_name}_{revision()}")
+        if st.button("ลบ", type="primary", disabled=not confirmed, key=f"delete_button_{kind}"):
+            if delete(delete_name):
+                flash(f"ลบ{noun} {delete_name} แล้ว")
             st.rerun()
 
 
@@ -590,7 +605,7 @@ def render_hub() -> None:
             "🍎",
             f"{len(HOMEWORK) + 1:02d} / APPLICATION",
             "ระบบแนะนำผลไม้",
-            "ทดลองระบบแนะนำผลไม้ เลือกผู้ใช้ จัดการข้อมูลลูกค้า ผลไม้ และสำรวจกราฟความสัมพันธ์ภายในแอป",
+            "ทดลองระบบแนะนำผลไม้ เลือกผู้ใช้ จัดการข้อมูลผู้ใช้ ผลไม้ ความสัมพันธ์ และสำรวจกราฟภายในแอป",
         )
         if st.button("เข้าสู่ระบบแนะนำ →", type="primary", width="stretch"):
             st.session_state["view"] = "app"
@@ -640,8 +655,8 @@ with st.sidebar:
         """
         <div class="author">
           <small>ผู้จัดทำ</small>
-          <b>กมลวรรณ ทับจิต</b><br>
-          รหัสนักศึกษา 664245002
+          <b>ชิษณุพงศ์ เกตุพูนทอง</b><br>
+          รหัสนักศึกษา 664245004
         </div>
         """,
         unsafe_allow_html=True,
@@ -652,7 +667,7 @@ st.markdown(
     <div class="hero">
       <div class="hero-sub">FRUIT RECOMMENDATION SYSTEM</div>
       <h1>🍎 ระบบแนะนำผลไม้</h1>
-      <p>แนะนำผลไม้ด้วย Graph Database จากลูกค้าที่มีรสนิยมคล้ายกัน</p>
+      <p>แนะนำผลไม้ด้วย Graph Database จากผู้ใช้ที่ชอบผลไม้คล้ายกัน</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -664,24 +679,22 @@ if page == "Dashboard":
     st.subheader("ภาพรวมระบบ")
     m = get_dashboard_metrics()
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("👤 ลูกค้า", m.get("customers", 0))
-    c2.metric("🍎 ผลไม้", m.get("waters", 0))
+    c1.metric("👤 ผู้ใช้", m.get("users", 0))
+    c2.metric("🍎 ผลไม้", m.get("fruits", 0))
     c3.metric("❤️ ความสัมพันธ์ LIKES", m.get("likes", 0))
     c4.metric("🤝 ความสัมพันธ์ SIMILAR_TO", m.get("similarities", 0))
 
-    waters = sorted(get_waters(), key=lambda w: (-w["likes"], w["name"]))
-    if waters:
+    fruits = sorted(get_fruits(), key=lambda f: (-f["likes"], f["name"]))
+    if fruits:
         st.markdown("### ความนิยมของผลไม้")
-        images = get_water_images()
-        table = [{"image": water_picture_uri(w["water_id"], w["name"], images), **w} for w in waters]
+        images = get_fruit_images()
+        table = [{"image": fruit_picture_uri(f["name"], images), **f} for f in fruits]
         st.dataframe(
-            pd.DataFrame(table).rename(
-                columns={"image": "รูป", "water_id": "รหัส", "name": "ผลไม้", "likes": "จำนวนคนชอบ"}
-            ),
+            pd.DataFrame(table).rename(columns={"image": "รูป", "name": "ผลไม้", "likes": "จำนวนคนชอบ"}),
             column_config={
                 "รูป": st.column_config.ImageColumn(width="small"),
                 "จำนวนคนชอบ": st.column_config.ProgressColumn(
-                    format="%d", min_value=0, max_value=max(1, waters[0]["likes"])
+                    format="%d", min_value=0, max_value=max(1, fruits[0]["likes"])
                 ),
             },
             width="stretch",
@@ -689,152 +702,227 @@ if page == "Dashboard":
         )
 
     st.divider()
-    customer_id = customer_selector("dash_customer")
-    profile = get_profile(customer_id)
+    profile = get_profile(user_selector("dash_user"))
 
     if profile:
         left, mid, right = st.columns([1, 1, 1])
         with left:
             st.markdown(f"### {profile['name']}")
-            st.write(f"**รหัส:** {profile['customer_id']}")
             st.write(f"**ชอบผลไม้:** {len(profile['liked'])} ชนิด")
-            st.write(f"**ลูกค้าที่คล้ายกัน:** {len(profile['similar'])} คน")
+            st.write(f"**ผู้ใช้ที่คล้ายกัน:** {len(profile['similar'])} คน")
         with mid:
             st.markdown("### ผลไม้ที่ชอบ")
             if profile["liked"]:
-                st.dataframe(pd.DataFrame(profile["liked"]), width="stretch", hide_index=True)
+                st.dataframe(pd.DataFrame({"ผลไม้": profile["liked"]}), width="stretch", hide_index=True)
             else:
                 st.info("ยังไม่มีผลไม้ที่ชอบ")
         with right:
-            st.markdown("### ลูกค้าที่คล้ายกัน")
+            st.markdown("### ผู้ใช้ที่คล้ายกัน")
             if profile["similar"]:
-                st.dataframe(pd.DataFrame(profile["similar"]), width="stretch", hide_index=True)
+                st.dataframe(pd.DataFrame({"ผู้ใช้": profile["similar"]}), width="stretch", hide_index=True)
             else:
-                st.info("ยังไม่มีลูกค้าที่คล้ายกัน")
+                st.info("ยังไม่มีผู้ใช้ที่คล้ายกัน")
 
 elif page == "Recommendations":
     st.subheader("✨ ผลไม้ที่แนะนำ")
-    customer_id = customer_selector("rec_customer")
-    top_n = st.slider("จำนวนคำแนะนำ", 1, 5, 3, key="rec_top_n")
-    if st.button("🔍 แนะนำผลไม้", type="primary"):
-        recs = recommend_waters(customer_id, top_n)
-        if recs:
-            st.success(f"พบผลไม้แนะนำ {len(recs)} ชนิดสำหรับคุณ")
-            images = get_water_images()
-            for r in recs:
-                with st.container(border=True):
-                    col1, col2 = st.columns([1, 4])
-                    with col1:
-                        st.image(water_picture(r["water_id"], r["name"], images), width=120)
-                    with col2:
-                        st.markdown(f"### {r['name']}")
-                        st.markdown(f'<span class="score-pill">คะแนนความน่าสนใจ: {r["score"]}</span>', unsafe_allow_html=True)
-                        st.write(f"**รหัส:** {r['water_id']}")
-                        st.caption("แนะนำจากลูกค้าที่มีรสนิยมคล้ายกันและชื่นชอบผลไม้ชนิดนี้")
-        else:
-            st.info("ไม่พบคำแนะนำเพิ่มเติม (คุณอาจจะชอบผลไม้ครบทุกชนิดที่มีในระบบแล้ว หรือยังไม่มีข้อมูลความชอบเพียงพอ)")
+    user = user_selector("rec_user")
+    top_n = st.slider("จำนวนคำแนะนำ", 1, 10, 5, key="rec_top_n")
+    rows = recommend_fruits(user, top_n)
 
-elif page == "Customers":
-    st.subheader("👤 จัดการข้อมูลลูกค้า")
+    st.caption("score = จำนวนผู้ใช้ที่คล้ายกัน (SIMILAR_TO) ที่ชอบผลไม้นั้น โดยตัดผลไม้ที่ผู้ใช้ชอบอยู่แล้วออก")
+    if not rows:
+        st.info("ยังไม่มีคำแนะนำสำหรับผู้ใช้นี้ (อาจชอบผลไม้ครบทุกชนิดแล้ว หรือยังไม่มีผู้ใช้ที่คล้ายกัน)")
+    images = get_fruit_images() if rows else {}
+    for i, row in enumerate(rows, start=1):
+        names = ", ".join(row.get("similar_names") or [])
+        with st.container(border=True, key=f"card_rec_{i}"):
+            picture, details = st.columns([1, 6], vertical_alignment="center")
+            picture.image(fruit_picture(row["fruit"], images), width=120)
+            details.markdown(
+                f"""
+                <span class="score-pill">#{i} · score {row['score']}</span>
+                <h3 style="margin:.55rem 0 .2rem 0">{escape(row['fruit'])}</h3>
+                <p><b>เหตุผล:</b> ผู้ใช้ที่คล้ายกัน {row['score']} คนชอบ ({escape(names)})</p>
+                """,
+                unsafe_allow_html=True,
+            )
+
+elif page == "Users":
+    st.subheader("👤 จัดการผู้ใช้")
     manage_nodes(
-        noun="ลูกค้า",
-        id_field="customer_id",
-        rows=get_customers(),
-        column_labels={"customer_id": "รหัสลูกค้า", "name": "ชื่อลูกค้า", "likes_count": "จำนวนที่ชอบ", "similar_count": "จำนวนเพื่อนที่คล้าย"},
-        id_prefix="C",
-        id_start=1,
-        create=create_customer,
-        update=update_customer,
-        delete=delete_customer,
-        delete_warning=lambda c: f"กำลังจะลบลูกค้า {c['customer_id']} — {c['name']} รวมถึงความสัมพันธ์ทั้งหมด",
+        kind="user",
+        noun="ผู้ใช้",
+        rows=get_users(),
+        column_labels={"name": "ชื่อ", "likes": "ชอบผลไม้ (ชนิด)", "similar": "ผู้ใช้ที่คล้ายกัน (คน)"},
+        create=create_user,
+        rename=rename_user,
+        delete=delete_user,
+        delete_warning=lambda row: (
+            f"การลบจะลบความสัมพันธ์ของผู้ใช้คนนี้ด้วย: LIKES {row['likes']} เส้น "
+            f"และ SIMILAR_TO {row['similar']} เส้น (ย้อนกลับไม่ได้)"
+        ),
     )
 
-elif page == "Waters":
-    st.subheader("🍎 จัดการข้อมูลผลไม้")
-    images = get_water_images()
+elif page == "Fruits":
+    st.subheader("🍎 จัดการผลไม้")
+    fruits = get_fruits()
+    images = get_fruit_images()
+    if fruits:
+        gallery = st.columns(6)
+        for i, f in enumerate(fruits):
+            with gallery[i % 6]:
+                st.image(fruit_picture(f["name"], images), width=140)
+                st.caption(f["name"])
+        st.caption("ผลไม้ที่ยังไม่ได้อัปโหลดรูปจะแสดงรูปที่ระบบวาดให้ อัปโหลดรูปเองได้ที่แท็บ เพิ่ม หรือ แก้ไข ด้านล่าง")
     manage_nodes(
+        kind="fruit",
         noun="ผลไม้",
-        id_field="water_id",
-        rows=get_waters(),
-        column_labels={"water_id": "รหัสผลไม้", "name": "ชื่อผลไม้", "likes": "จำนวนคนชอบ"},
-        id_prefix="W",
-        id_start=1,
-        create=create_water,
-        update=update_water,
-        delete=delete_water,
-        delete_warning=lambda w: f"กำลังจะลบผลไม้ {w['water_id']} — {w['name']} รวมถึงความสัมพันธ์ทั้งหมด",
+        rows=fruits,
         images=images,
-        set_image=set_water_image,
+        set_image=set_fruit_image,
+        column_labels={"name": "ชื่อ", "likes": "จำนวนคนชอบ"},
+        create=create_fruit,
+        rename=rename_fruit,
+        delete=delete_fruit,
+        delete_warning=lambda row: (
+            f"การลบจะลบความสัมพันธ์ LIKES ที่ชี้มายังผลไม้นี้ด้วย {row['likes']} เส้น (ย้อนกลับไม่ได้)"
+        ),
     )
 
 elif page == "Relationships":
     st.subheader("🔗 จัดการความสัมพันธ์")
-    tab_likes, tab_similar = st.tabs(["❤️ ความชอบผลไม้ (LIKES)", "🤝 ความคล้ายคลึงของลูกค้า (SIMILAR_TO)"])
+    user = user_selector("rel_user")
+    profile = get_profile(user)
+    if not profile:
+        st.error(f"ไม่พบผู้ใช้ {user} (อาจถูกลบไปแล้ว)")
+        st.stop()
+    st.caption("เลือกเพิ่มหรือเอาออกในช่องด้านล่าง แล้วกดบันทึก ระบบจะเพิ่ม/ลบความสัมพันธ์ให้ตรงกับที่เลือก")
 
-    with tab_likes:
-        st.markdown("### กำหนดความชอบผลไม้ของลูกค้า")
-        customers = get_customers()
-        waters = get_waters()
-        if not customers or not waters:
-            st.info("ต้องมีข้อมูลลูกค้าและผลไม้ก่อนจึงจะกำหนดความชอบได้")
-        else:
-            cust_map = {f"{c['customer_id']} — {c['name']}": c["customer_id"] for c in customers}
-            chosen_cust_label = st.selectbox("เลือกลูกค้า", list(cust_map), key="like_cust")
-            chosen_cust_id = cust_map[chosen_cust_label]
+    likes_tab, similar_tab = st.tabs(["LIKES (ผู้ใช้ → ผลไม้)", "SIMILAR_TO (ผู้ใช้ ↔ ผู้ใช้)"])
 
-            current_likes = {w["water_id"] for w in get_profile(chosen_cust_id)["liked"]}
-            selected_waters = st.multiselect(
-                "เลือกผลไม้ที่ลูกค้าชื่นชอบ",
-                options=[w["water_id"] for w in waters],
-                default=list(current_likes),
-                format_func=lambda wid: next((w["name"] for w in waters if w["water_id"] == wid), wid),
-                key="like_waters_multi"
+    with likes_tab:
+        chosen = st.multiselect(
+            f"ผลไม้ที่ {user} ชอบ",
+            [f["name"] for f in get_fruits()],
+            default=profile["liked"],
+            key=f"likes_{user}_{revision()}",
+        )
+        added, removed = change_summary(profile["liked"], chosen)
+        if st.button("บันทึก LIKES", type="primary", disabled=not (added or removed)):
+            set_likes(user, chosen)
+            flash(f"บันทึก LIKES ของ {user} แล้ว (เพิ่ม {len(added)} · ลบ {len(removed)})")
+            st.rerun()
+        st.caption("การแก้ LIKES ไม่เปลี่ยน SIMILAR_TO ให้อัตโนมัติ ถ้าต้องการให้ตรงกับความชอบล่าสุด ให้กดคำนวณใหม่ที่แท็บ SIMILAR_TO")
+
+        st.markdown("#### LIKES ทั้งหมดในระบบ")
+        st.dataframe(
+            pd.DataFrame(list_likes(), columns=["user", "fruit"]).rename(columns={"user": "ผู้ใช้", "fruit": "ผลไม้"}),
+            width="stretch",
+            hide_index=True,
+        )
+
+    with similar_tab:
+        chosen = st.multiselect(
+            f"ผู้ใช้ที่คล้ายกับ {user}",
+            [u["name"] for u in get_users() if u["name"] != user],
+            default=profile["similar"],
+            key=f"similar_{user}_{revision()}",
+        )
+        st.caption("SIMILAR_TO เป็นความสัมพันธ์สองทิศทาง: ถ้า A คล้าย B แล้ว B ก็คล้าย A ด้วย (เก็บเพียงหนึ่งเส้นต่อคู่)")
+        added, removed = change_summary(profile["similar"], chosen)
+        if st.button("บันทึก SIMILAR_TO", type="primary", disabled=not (added or removed)):
+            set_similar(user, chosen)
+            flash(f"บันทึก SIMILAR_TO ของ {user} แล้ว (เพิ่ม {len(added)} · ลบ {len(removed)})")
+            st.rerun()
+
+        with st.expander("คำนวณ SIMILAR_TO ใหม่ทั้งระบบจากผลไม้ที่ชอบร่วมกัน (วิธีเดียวกับ notebook)"):
+            st.warning(
+                "ระบบจะลบ SIMILAR_TO เดิมทั้งหมด (รวมที่แก้ไขด้วยมือ) แล้วเชื่อมผู้ใช้ทุกคู่ที่ชอบผลไม้ชนิดเดียวกันอย่างน้อย 1 ชนิด"
             )
-            if st.button("บันทึกความชอบผลไม้", type="primary"):
-                set_likes(chosen_cust_id, selected_waters)
-                flash(f"อัปเดตความชอบผลไม้ของ {chosen_cust_label} เรียบร้อยแล้ว")
+            confirmed = st.checkbox("ยืนยันการคำนวณใหม่", key=f"confirm_rebuild_{revision()}")
+            if st.button("คำนวณ SIMILAR_TO ใหม่", disabled=not confirmed):
+                pairs = rebuild_similar()
+                flash(f"คำนวณ SIMILAR_TO ใหม่แล้ว ได้ทั้งหมด {pairs} คู่")
                 st.rerun()
 
-    with tab_similar:
-        st.markdown("### กำหนดความคล้ายคลึงระหว่างลูกค้า")
-        if len(customers) < 2:
-            st.info("ต้องมีข้อมูลลูกค้าอย่างน้อย 2 คนจึงจะกำหนดความคล้ายได้")
-        else:
-            c1_label = st.selectbox("ลูกค้าคนที่ 1", list(cust_map), key="sim_c1")
-            c1_id = cust_map[c1_label]
-
-            other_cust_map = {k: v for k, v in cust_map.items() if v != c1_id}
-            c2_label = st.selectbox("ลูกค้าคนที่ 2", list(other_cust_map), key="sim_c2")
-            c2_id = other_cust_map[c2_label]
-
-            current_sims = {s["customer_id"] for s in get_profile(c1_id)["similar"]}
-            is_currently_similar = c2_id in current_sims
-
-            make_similar = st.checkbox("มีความคล้ายคลึงกัน (SIMILAR_TO)", value=is_currently_similar)
-            if st.button("บันทึกความสัมพันธ์ลูกค้า", type="primary"):
-                set_similar(c1_id, c2_id, make_similar)
-                flash(f"อัปเดตความสัมพันธ์ระหว่าง {c1_label} และ {c2_label} เรียบร้อยแล้ว")
-                st.rerun()
+        st.markdown("#### SIMILAR_TO ทั้งหมดในระบบ")
+        st.dataframe(
+            pd.DataFrame(list_similarities(), columns=["user1", "user2"]).rename(
+                columns={"user1": "ผู้ใช้คนที่ 1", "user2": "ผู้ใช้คนที่ 2"}
+            ),
+            width="stretch",
+            hide_index=True,
+        )
 
 elif page == "Graph Explorer":
     st.subheader("🕸️ กราฟความสัมพันธ์")
-    st.write("สำรวจโครงสร้างเครือข่ายความสัมพันธ์ระหว่างลูกค้าและผลไม้รอบตัวผู้ใช้")
-    customer_id = customer_selector("graph_customer")
-    depth = st.slider("ระดับความลึก (Depth)", 1, 3, 2)
-
-    if st.button("แสดงกราฟ", type="primary"):
-        nodes, edges = graph_neighborhood(customer_id, depth)
-        st.success(f"พบ Node ทั้งหมด {len(nodes)} จุด และ Edge {len(edges)} เส้น")
-        if nodes:
-            st.dataframe(pd.DataFrame(nodes), width="stretch", hide_index=True)
-            st.dataframe(pd.DataFrame(edges), width="stretch", hide_index=True)
-        else:
-            st.info("ไม่พบข้อมูลความสัมพันธ์ในระดับความลึกที่เลือก")
+    user = user_selector("graph_user")
+    left, right = st.columns(2)
+    depth = left.slider("ระยะจากผู้ใช้ (จำนวนทอด)", 1, 3, 1, key="graph_depth")
+    types = right.multiselect("ความสัมพันธ์ที่แสดง", RELATIONSHIP_TYPES, default=RELATIONSHIP_TYPES, key="graph_types")
+    rows = graph_neighborhood(user, depth, types) if types else []
+    if not rows:
+        st.info("ไม่พบความสัมพันธ์ของผู้ใช้นี้ตามเงื่อนไขที่เลือก")
+    else:
+        fill = {"User": "#fdf3c7", "Fruit": "#fde3dc"}
+        dot = [
+            "digraph G {",
+            'rankdir="LR";',
+            'node [shape=box, style="filled", fillcolor="#ffffff", color="#18211f", fontname="sans-serif"];',
+            'edge [color="#65716c", fontcolor="#65716c", fontname="sans-serif", fontsize=10];',
+        ]
+        seen_nodes = set()
+        for r in rows:
+            for label, name in [(r["source_label"], r["source"]), (r["target_label"], r["target"])]:
+                if (label, name) not in seen_nodes:
+                    border = ', penwidth=3, color="#e94f36"' if (label, name) == ("User", user) else ""
+                    dot.append(
+                        f'{dot_quote(f"{label}:{name}")} [label={dot_quote(name)}, fillcolor="{fill.get(label, "#ffffff")}"{border}];'
+                    )
+                    seen_nodes.add((label, name))
+            source = dot_quote(f'{r["source_label"]}:{r["source"]}')
+            target = dot_quote(f'{r["target_label"]}:{r["target"]}')
+            # SIMILAR_TO is treated as symmetric, so draw it without an arrowhead.
+            direction = ", dir=none" if r["relationship"] == "SIMILAR_TO" else ""
+            dot.append(f'{source} -> {target} [label="{r["relationship"]}"{direction}];')
+        dot.append("}")
+        st.caption(f"พบ {len(seen_nodes)} node และ {len(rows)} relationship · สีเหลือง = ผู้ใช้ · สีแดงอ่อน = ผลไม้ · กรอบหนา = ผู้ใช้ที่เลือก")
+        st.graphviz_chart("\n".join(dot), width="stretch")
+        with st.expander("ดูข้อมูล relationship ที่ใช้วาดกราฟ"):
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 elif page == "Admin / Setup":
-    st.subheader("⚙️ ตั้งค่าและจัดการฐานข้อมูล")
-    st.warning("การเพิ่มข้อมูลตัวอย่างจะทำการล้างฐานข้อมูลเดิมหรือเพิ่มข้อมูลเริ่มต้นสำหรับทดสอบระบบ")
-    if st.button("🚀 สร้างข้อมูลตัวอย่าง (Demo Data)", type="primary"):
-        seed_demo_data()
-        flash("เพิ่มข้อมูลตัวอย่าง (ลูกค้า, ผลไม้ และความสัมพันธ์) สำเร็จแล้ว")
+    st.subheader("⚙️ ตั้งค่าข้อมูล")
+    info = connection_info()
+    st.markdown(
+        f"""
+        **การเชื่อมต่อ Neo4j Aura** ✅ เชื่อมต่อสำเร็จ
+        - URI: `{info['uri']}`
+        - Username: `{info['username']}`
+        - Database: `{info['database']}`
+
+        **Graph schema** (ตาม notebook งานที่ 3)
+        - `(:User {{name}})-[:LIKES]->(:Fruit {{name, image}})`
+        - `(:User)-[:SIMILAR_TO]-(:User)` — ผู้ใช้ที่ชอบผลไม้ชนิดเดียวกันอย่างน้อย 1 ชนิด
+        """
+    )
+
+    st.markdown("### เพิ่มข้อมูลตัวอย่าง")
+    st.info(
+        "สร้าง Constraint และเพิ่มข้อมูลจาก notebook (ผู้ใช้ 10 คน ผลไม้ 5 ชนิด LIKES 21 เส้น) ด้วย MERGE "
+        "จึงกดซ้ำได้และไม่ลบผู้ใช้/ผลไม้ที่เพิ่มเอง จากนั้นคำนวณ SIMILAR_TO ใหม่ทั้งระบบจากผลไม้ที่ชอบร่วมกัน"
+    )
+    if st.button("สร้าง Constraint + ข้อมูลตัวอย่าง", type="primary"):
+        with st.spinner("กำลังสร้างข้อมูล..."):
+            seed_demo_data()
+        flash("สร้างข้อมูลตัวอย่างเรียบร้อยแล้ว")
+        st.rerun()
+
+    st.markdown("### ล้างข้อมูลแล้วเริ่มใหม่")
+    st.warning("ลบ User และ Fruit ทั้งหมดพร้อมความสัมพันธ์และรูปที่อัปโหลด แล้วสร้างข้อมูลตัวอย่างใหม่ (ย้อนกลับไม่ได้)")
+    confirmed = st.checkbox("ยืนยันการล้างข้อมูลทั้งหมด", key=f"confirm_reset_{revision()}")
+    if st.button("ล้างข้อมูลและสร้างข้อมูลตัวอย่างใหม่", disabled=not confirmed):
+        with st.spinner("กำลังล้างและสร้างข้อมูล..."):
+            seed_demo_data(reset=True)
+        flash("ล้างข้อมูลและสร้างข้อมูลตัวอย่างใหม่เรียบร้อยแล้ว")
         st.rerun()
