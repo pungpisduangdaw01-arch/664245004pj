@@ -213,4 +213,4 @@ Streamlit Cloud ติดตั้ง package จาก `requirements.txt` แ�
 6. เปรียบเทียบผลเมื่อเปลี่ยนวิธีคำนวณความคล้ายหรือคะแนน
 7. ต่อด้วย rating, ราคา/คุณสมบัติผลไม้, Jaccard similarity, Graph Data Science หรือ Precision@K และ Recall@K
 
-ก่อนนำไปใช้จริง ควรเปลี่ยนชื่อภายในจาก `Water`/`water_id`/`recommend_waters` ให้สื่อถึงผลไม้ด้วยการปรับ schema, Cypher ทุกจุด, service, UI และข้อมูลเดิมในฐานข้อมูลอย่างเป็นชุด
+ก่อนนำไปใช้จริง ควรเปลี่ยนชื่อภายในจาก `Water`/`water_id`/`recommend_waters` ให้สื่อถึงผลไม้ด้วยการปรับ schema, Cypher ทุกจุด, service, UI และข้อมูลเดิมในฐานข้อมูลอย่างเป็นชุด.
