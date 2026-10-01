@@ -56,7 +56,7 @@ PAGES = {
 }
 
 # Hub (landing page): homework 1-3 live in homework/<folder>/, card 4 opens this app.
-REPO_URL = "https://github.com/tabjit2005/MineralWater1"
+REPO_URL = "https://github.com/pungpisduangdaw01-arch/664245004pj.git"
 REPO_BRANCH = "main"
 HOMEWORK_DIR = Path(__file__).parent / "homework"
 HOMEWORK = [
@@ -241,8 +241,8 @@ def require_connection() -> None:
     except Exception as exc:
         st.error("ยังเชื่อมต่อ Neo4j Aura ไม่สำเร็จ")
         st.code(
-            '[neo4j]\nuri = "neo4j+s://12ca74ed.databases.neo4j.io"\n'
-            'username = "12ca74ed"\npassword = "YOUR_PASSWORD"\ndatabase = "12ca74ed"',
+            '[neo4j]\nuri = "neo4j+s://4e8333b1.databases.neo4j.io"\n'
+            'username = "4e8333b1"\npassword = "YOUR_PASSWORD"\ndatabase = "4e8333b1"',
             language="toml",
         )
         st.caption("ให้นำค่าด้านบนไปใส่ใน .streamlit/secrets.toml (หรือ Streamlit Secrets) และห้าม commit password ลง GitHub")
